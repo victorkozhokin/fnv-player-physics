@@ -1,0 +1,4 @@
+# JIP will not precompile a script with unix line endings, so git is told not to
+# have an opinion about these files. core.autocrlf is "input" on this machine,
+# which would quietly rewrite them on the way into a commit.
+scripts-game/** -text

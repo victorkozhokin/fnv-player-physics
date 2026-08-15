@@ -1,0 +1,43 @@
+; Player Physics -- Data\NVSE\Plugins\Scripts\ln_PlayerPhysics.txt
+;
+; Tells the plugin when an interaction mod is steering the player, so it can
+; stand down for exactly that and nothing else.
+;
+; Without this the plugin has only the engine to ask, and the engine can say no
+; more than "some special idle is playing" -- not whose, and not whether that
+; mod is moving the player or merely animating him. Standing down on that meant
+; standing down for every animation mod in the load order.
+;
+; Runs itself: JIP LN compiles anything in this folder at load. No esp, no
+; plugin slot. Requires JIP LN NVSE and JohnnyGuitar NVSE.
+;
+; Delete this file and the plugin goes back to the old behaviour on its own:
+; nothing announces itself, so bSpecialIdleFallback stays in charge.
+
+; --- Announce the layer --------------------------------------------------------
+;
+; Sent once, at load, and it is what switches the plugin off the special idle
+; test for good. Without it the plugin would keep standing the physics down for
+; every animation in the load order until the first interaction happened, and
+; this file would only be sharpening a check that was never sharp.
+
+PPScriptLayerReady
+
+; --- B42 Interact -------------------------------------------------------------
+;
+; B42Rap is dispatched at the moment the mod starts pulling the player towards
+; an object, which is the phase that fights the physics. Its own loop counts a
+; duration down at 62.5 units per second, so the end is known up front and needs
+; no second event.
+;
+;   arg 3 (float) is that duration.
+
+SetEventHandlerAlt "B42Rap" (begin Function {ref rObject, string_var sNode, float fDist, float fDuration}
+
+	PPBeginInteraction
+
+	; Released after the same span the mod's own pull loop runs for, plus a
+	; little slack so the physics do not resume mid-tug.
+	CallAfter ((fDuration / 62.5) + 0.15) ({} => PPEndInteraction)
+
+end)

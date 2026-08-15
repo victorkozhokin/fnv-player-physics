@@ -1,0 +1,10 @@
+LIBRARY kernel32.dll
+EXPORTS
+    VirtualProtect@16
+    CreateFileA@28
+    WriteFile@20
+    CloseHandle@4
+    CreateDirectoryA@8
+    OutputDebugStringA@4
+    GetFileAttributesExA@12
+    GetPrivateProfileStringA@24

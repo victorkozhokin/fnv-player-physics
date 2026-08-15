@@ -1,0 +1,28 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install lld
+        run: brew install lld
+      - name: Build
+        run: ./scripts/build.sh
+      - name: Check the DLL looks like an NVSE plugin
+        run: |
+          readobj="$(brew --prefix llvm)/bin/llvm-readobj"
+          "$readobj" --coff-exports build/PlayerPhysics.dll | grep -q NVSEPlugin_Query
+          "$readobj" --coff-exports build/PlayerPhysics.dll | grep -q NVSEPlugin_Load
+          "$readobj" --file-headers build/PlayerPhysics.dll | grep -q IMAGE_FILE_MACHINE_I386
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PlayerPhysics
+          path: |
+            build/PlayerPhysics.dll
+            PlayerPhysics.ini
