@@ -84,6 +84,17 @@ constinit UInt32 g_lastBlockedTenths = 0;
 // rather than a longer wait on the old one.
 constinit bool  g_inAir = false;
 
+// The same two numbers the blocked timer is built from, as a ratio, and the time
+// spent off the ground.
+//
+// The timer answers "has the player been stuck for a while", which needs history
+// and therefore cannot answer on the first frame. The ratio answers "is the
+// player getting anywhere right now", which needs none and answers immediately.
+// A climb wants the second question -- the wait in front of the first was never
+// wanted, it was the cost of asking it.
+constinit float g_speedRatio  = 1.f;
+constinit float g_airSeconds  = 0.f;
+
 constinit bool  g_scriptInteraction = false;
 constinit bool  g_scriptLayerSeen   = false;
 constinit float g_interactionSeconds = 0.f;
@@ -544,6 +555,28 @@ extern "C" bool __cdecl Cmd_PPInAir_Execute(void*, void*, void*, void*,
 	return true;
 }
 
+// How much of the movement the engine asked for the player is actually getting,
+// 0 to 1. Low means walking into something. Unlike the blocked timer this is
+// true on the frame it happens, which is the whole reason it exists.
+extern "C" bool __cdecl Cmd_PPSpeedRatio_Execute(void*, void*, void*, void*,
+                                                 void*, void*, double *result,
+                                                 UInt32*)
+{
+	*result = g_speedRatio;
+	return true;
+}
+
+// Seconds since the character controller left the ground. Zero on the ground.
+// A climb wants this rather than a plain airborne flag: the first moments of a
+// jump are spent at ankle height, where nothing is within reach yet.
+extern "C" bool __cdecl Cmd_PPAirTime_Execute(void*, void*, void*, void*,
+                                              void*, void*, double *result,
+                                              UInt32*)
+{
+	*result = g_airSeconds;
+	return true;
+}
+
 extern "C" bool __cdecl Cmd_PPEndInteraction_Execute(void*, void*, void*, void*,
                                                      void*, void*, double *result,
                                                      UInt32*)
@@ -556,7 +589,7 @@ extern "C" bool __cdecl Cmd_PPEndInteraction_Execute(void*, void*, void*, void*,
 // Opcode space for plugins runs from 0x2000 to 0x8000, and 0x2000 itself is the
 // "unassigned" base NVSE complains about. Ranges are handed out by the NVSE
 // team to keep plugins apart; this one is not from them, it is a sparse corner
-// picked to make a collision unlikely. Five slots are claimed.
+// picked to make a collision unlikely. Seven slots are claimed.
 //
 // A collision here fails loudly rather than quietly: the script is compiled at
 // runtime by name, so a displaced command shows up as a compile error in the
@@ -586,6 +619,18 @@ CommandInfo g_cmdInAir = {
 	"PPInAir", "", 0,
 	"whether the player's character controller has left the ground",
 	0, 0, nullptr, AsCodePtr(Cmd_PPInAir_Execute), nullptr, nullptr, 0
+};
+
+CommandInfo g_cmdSpeedRatio = {
+	"PPSpeedRatio", "", 0,
+	"how much of the movement the engine asked for the player is getting, 0 to 1",
+	0, 0, nullptr, AsCodePtr(Cmd_PPSpeedRatio_Execute), nullptr, nullptr, 0
+};
+
+CommandInfo g_cmdAirTime = {
+	"PPAirTime", "", 0,
+	"seconds since the player's character controller left the ground",
+	0, 0, nullptr, AsCodePtr(Cmd_PPAirTime_Execute), nullptr, nullptr, 0
 };
 
 CommandInfo g_cmdEndInteraction = {
@@ -641,6 +686,11 @@ extern "C" void __cdecl hook_MoveCharacter(bhkCharacterController *charCtrl,
 
 	g_inAir = state != kState_OnGround;
 
+	if (state == kState_OnGround)
+		g_airSeconds = 0.f;
+	else
+		g_airSeconds += deltaTime;
+
 	// Blocked: asked to travel and barely moved. move.input's length is the
 	// speed the engine means the player to have, so the comparison needs no
 	// threshold pulled out of the air.
@@ -658,6 +708,17 @@ extern "C" void __cdecl hook_MoveCharacter(bhkCharacterController *charCtrl,
 			g_blockedSeconds += deltaTime;
 		else
 			g_blockedSeconds = 0.f;
+
+		// Capped at 1: overshoot on a single frame is measurement noise, not the
+		// player outrunning their own orders, and letting it above 1 only makes
+		// the number harder to compare against a threshold.
+		if (wanted > 0.05f) {
+			const auto ratio = moved / wanted;
+			g_speedRatio = ratio > 1.f ? 1.f : ratio;
+		} else {
+			// Not asking to move is not the same as being stopped by something.
+			g_speedRatio = 1.f;
+		}
 
 		// Reported on the tenth of a second, so silence means the player never
 		// counts as blocked rather than the number never being looked at.
@@ -1027,7 +1088,9 @@ extern "C" __declspec(dllexport) bool NVSEPlugin_Load(NVSEInterface *nvse)
 	    nvse->RegisterCommand(&g_cmdBeginInteraction) &&
 	    nvse->RegisterCommand(&g_cmdEndInteraction) &&
 	    nvse->RegisterCommand(&g_cmdBlockedTime) &&
-	    nvse->RegisterCommand(&g_cmdInAir))
+	    nvse->RegisterCommand(&g_cmdInAir) &&
+	    nvse->RegisterCommand(&g_cmdSpeedRatio) &&
+	    nvse->RegisterCommand(&g_cmdAirTime))
 		log::Print("Registered the script commands from opcode %x.", kOpcodeBase);
 	else
 		log::Print("Could not register the script commands; falling back to the "
