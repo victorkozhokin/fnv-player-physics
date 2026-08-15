@@ -1,34 +1,39 @@
+[center]
 [size=5][b]Description:[/b][/size]
-Replaces the player's movement with Quake-style physics: real ground friction, air control, air strafing and bunny hops. The character stops sliding around like a shopping trolley and starts going where you point it.
+Forked and redoing of [url=https://github.com/AltimorTASDK/fnv-player-physics]AltimorTASDK's fnv-player-physics[/url]
+
+Replaces the player's movement with Quake-style physics:
+real ground friction,
+air control,
+air strafing
+and bunny hops.
+
+The character stops sliding around like a shopping trolley and starts going where you point it.
 
 [size=5][b]Features:[/b][/size]
 [list]
-[*]You accelerate!
-[*]You slow down!
-[*]You can air strafe!
-[*]You can bunny hop!
-[*]Landings hurt your speed, not just your health!
-[*]3 presets — Responsive, Grounded, Heavy!
-[*]Full MCM menu, everything applies without a restart!
-[*]No ESP!
+You accelerate!
+You slow down!
+You can air strafe!
+You can bunny hop!
+Landings hurt your speed, not just your health!
+3 presets — Responsive, Grounded, Heavy!
+Full MCM menu, everything applies without a restart!
+No ESP (ESPLESS)!
 [/list]
 
 Works great with [url=https://www.nexusmods.com/newvegas/mods/85459]Enhanced Movement[/url]
-Walkin' Inertia does the same job for the same reason — you do not need both, but they will not fight!
 
-[size=5][b]Requirements:[/b][/size]
+[size=5][b]Compatabilities:[/b][/size]
 [list]
-[*]xNVSE
-[*]FalloutNV.exe 1.4.0.525 (Steam or GOG)
-[*][url=https://www.nexusmods.com/newvegas/mods/93642]MCM Extender[/url] (optional — for the menu)
+[*][url=https://www.nexusmods.com/newvegas/mods/93642]MCM Extender[/url] (optional — for the config menu)
+[*][url=https://www.nexusmods.com/newvegas/mods/71373]Walking Inertia[/url] does the same job for the same reason — you do not need both, but they will not fight!
 [/list]
 
 [size=5][b]Installation:[/b][/size]
 [list]
 [*]Install with MO2
-[*]MCM-RU folder is optional Russian menu text
 [/list]
 
-[b]Note:[/b] the plugin refuses to load on any other exe build, on purpose — every address it patches is hardcoded, and loading anyway would just crash you later.
-
-Enjoy! (◡‿◡)
+Enjoy! ^_^
+[/center]
