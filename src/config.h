@@ -2,7 +2,8 @@
 
 #include "game/types.h"
 
-// Settings read once at load from Data\NVSE\Plugins\PlayerPhysics.ini.
+// Settings read from Data\Config\PlayerMovement\PlayerPhysics.ini at load and
+// re-read whenever the file changes -- see ReloadIfChanged below.
 // The defaults reproduce the hardcoded values the plugin used to ship with.
 
 namespace config {

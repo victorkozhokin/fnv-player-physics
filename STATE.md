@@ -44,7 +44,7 @@ It was not always so, and that single misplacement was three bugs at once:
 
 ## Script interface
 
-Five zero-argument commands from opcode base `0x6A00`. Mantle depends on all of
+Seven zero-argument commands from opcode base `0x6A00`. Mantle depends on all of
 them; **a missing one is a compile error in the consuming script, which kills
 that whole script rather than one feature of it.** Adding commands is safe,
 renaming or removing them is not.

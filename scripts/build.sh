@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
-# Cross-compile PlayerPhysics.dll (32-bit Windows) from macOS or Linux.
+# Build PlayerPhysics.dll (32-bit Windows) from macOS, Linux or Windows.
 #
 # Requirements: clang (Apple clang is fine) and lld-link from LLVM's lld.
-#   brew install lld
+#   macOS    brew install lld
+#   Linux    the distro's clang and lld packages
+#   Windows  the LLVM release, run from Git Bash -- see README
 #
 # The plugin links without a C runtime and without the Windows SDK, so no
 # Visual Studio or xwin setup is needed -- the only import library is generated
-# from scripts/kernel32.def on the fly.
+# from scripts/kernel32.def on the fly. That is as true on Windows as it is
+# anywhere else: this is not a cross-compile there, but nothing about the build
+# changes.
 
 set -euo pipefail
 
@@ -17,12 +21,18 @@ target=i686-pc-windows-msvc
 CLANG="${CLANG:-clang}"
 LLD_LINK="${LLD_LINK:-lld-link}"
 
-# llvm-dlltool lives in the (keg-only) llvm prefix that lld depends on, so it
-# is usually not on PATH.
+# On Homebrew, llvm-dlltool lives in the (keg-only) llvm prefix that lld depends
+# on, so it is usually not on PATH. Everywhere else it sits beside clang, which
+# is why clang's own directory is searched before the fixed candidates.
 if [[ -z "${DLLTOOL:-}" ]]; then
+    clang_bin="$(command -v "$CLANG" 2>/dev/null || true)"
+    clang_dir="${clang_bin:+$(dirname "$clang_bin")}"
+
     for candidate in llvm-dlltool \
+        ${clang_dir:+"$clang_dir/llvm-dlltool"} \
         /opt/homebrew/opt/llvm/bin/llvm-dlltool \
-        /usr/local/opt/llvm/bin/llvm-dlltool
+        /usr/local/opt/llvm/bin/llvm-dlltool \
+        "/c/Program Files/LLVM/bin/llvm-dlltool"
     do
         if command -v "$candidate" >/dev/null 2>&1; then
             DLLTOOL="$candidate"
@@ -33,10 +43,28 @@ fi
 
 for tool in "$CLANG" "$LLD_LINK" "${DLLTOOL:-llvm-dlltool}"; do
     command -v "$tool" >/dev/null 2>&1 || {
-        echo "error: $tool not found. Try: brew install lld" >&2
+        echo "error: $tool not found. Install LLVM (macOS: brew install lld;" \
+             "Windows: winget install LLVM.LLVM)." >&2
         exit 1
     }
 done
+
+# Git for Windows ships no zip, so fall back to 7-Zip, which is the one
+# archiver that is reliably present there. Both produce a plain .zip; the mod
+# managers that read it cannot tell the difference.
+make_zip() {
+    local out="$1"
+    shift
+
+    if command -v zip >/dev/null 2>&1; then
+        zip -rq "$out" "$@" -x '*.DS_Store'
+    elif command -v 7z >/dev/null 2>&1; then
+        7z a -tzip -bso0 -bsp0 '-xr!.DS_Store' "$out" "$@"
+    else
+        echo "error: need zip or 7z to package $out" >&2
+        exit 1
+    fi
+}
 
 mkdir -p "$out"
 
@@ -74,7 +102,7 @@ for src in "${sources[@]}"; do
     objects+=("$obj")
 done
 
-# Import library for the six kernel32 functions the plugin calls.
+# Import library for the kernel32 functions the plugin calls.
 #
 # --kill-at keeps the stdcall decoration on the object-side symbols (which is
 # what clang emits) while exporting the plain names kernel32.dll actually has.
@@ -82,9 +110,13 @@ echo "  LIB kernel32"
 "$DLLTOOL" -m i386 --kill-at \
     -d "$root/scripts/kernel32.def" -l "$out/kernel32.lib"
 
+# lld-link's options are spelled with a leading dash rather than a slash: MSYS
+# (Git Bash) rewrites any argument that looks like an absolute unix path into a
+# Windows one, so "/dll" arrives as "C:/Program Files/Git/dll". lld accepts both
+# spellings on every platform; the dash one is the only portable choice.
 echo "  LNK PlayerPhysics.dll"
-"$LLD_LINK" /machine:x86 /dll /nodefaultlib /entry:DllMain \
-    /out:"$out/PlayerPhysics.dll" \
+"$LLD_LINK" -machine:x86 -dll -nodefaultlib -entry:DllMain \
+    -out:"$out/PlayerPhysics.dll" \
     "${objects[@]}" "$out/kernel32.lib"
 
 # Stage the mod exactly as it sits under Data/, then zip it.
@@ -111,9 +143,17 @@ cp "$root"/scripts-game/*.txt "$root/nvse/Plugins/Scripts/"
 cp "$root/PlayerPhysics.ini" "$stage_ini/"
 cp "$root"/presets/*.ini "$stage_ini/presets/"
 
+# JIP will not precompile a loose script with unix line endings, and it fails
+# silently -- the script layer simply never announces itself and the plugin
+# falls back to standing down for any special idle. The sources are kept as
+# they are; only the staged copies are converted.
+for f in "$root"/nvse/Plugins/Scripts/*.txt; do
+    perl -pi -e 's/\r?\n/\r\n/' "$f"
+done
+
 # LICENSE and README travel with the binary: this is a GPL-3.0 fork, so the
 # licence text and the notice of what changed have to reach whoever gets it.
-(cd "$root" && zip -rq "$archive" nvse config MCM MCM-RU LICENSE README.md -x '*.DS_Store')
+(cd "$root" && make_zip "$archive" nvse config MCM MCM-RU LICENSE README.md)
 
 
 echo

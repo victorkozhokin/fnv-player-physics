@@ -493,11 +493,10 @@ static bool GetMoveVector(const CharacterMoveParams &move, const NiVector3 &inpu
 //
 // The original source read a PlayerMover::moveSpeed field that does not exist
 // in any public header for this game version -- PlayerMover holds an analog
-// move *direction* at that offset, not a speed. The engine's cached walk and
-// run speeds are used instead, falling back to the configured value while the
-// cache is cold.
-// The player's running speed, which is what fStopSpeed was tuned against and so
-// the reference the friction floor is held in proportion to.
+// move *direction* at that offset, not a speed. The length of move.input is
+// used instead; see the comment on baseSpeed below. It is also the reference
+// fStopSpeed was tuned against, and so what the friction floor is held in
+// proportion to.
 static void UpdateVelocity(const CharacterMoveParams &move, AlignedVector4 *velocity,
                            UInt32 state, float deltaTime)
 {

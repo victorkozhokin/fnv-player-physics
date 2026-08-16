@@ -65,12 +65,17 @@ generated from `scripts/kernel32.def` at build time. That is what lets it be
 built anywhere, with nothing but clang and LLVM's linker.
 
 ```sh
-brew install lld       # brings llvm, for lld-link and llvm-dlltool
 ./scripts/build.sh     # any clang will do for compiling, Apple's included
 ```
 
-The result is `build/PlayerPhysics.dll`. On Linux the same script works with
-distro clang and lld; on Windows it works under git-bash.
+Install LLVM first — `winget install LLVM.LLVM` on Windows, `brew install lld`
+on macOS (which brings llvm, for `lld-link` and `llvm-dlltool`), the distro's
+clang and lld packages on Linux.
+
+The result is `build/PlayerPhysics.dll`. On Windows the script runs under Git
+Bash; it is not a cross-compile there, but nothing about the build changes.
+Packaging uses `zip`, falling back to `7z` where there is no `zip` — which is
+the case under Git for Windows.
 
 `cl.exe` is **not** supported: the sources combine clang's MS inline asm with
 GNU builtins. `CMakeLists.txt` exists for editor integration and requires
@@ -100,8 +105,11 @@ All offsets were recovered from the retail 1.4.0.525 executable. Two things the
 original source referred to could not be reproduced from public headers:
 
 - `PlayerMover::moveSpeed` — no such field exists; offset `0x88` of `PlayerMover`
-  holds an analog move *direction*. Base speed now comes from the engine's
-  cached walk/run speeds, with `fBaseSpeed` as a fallback.
+  holds an analog move *direction*. Base speed is the length of the engine's own
+  wanted-movement vector, `move.input`, which already has stance, encumbrance,
+  crippled legs and every speed mod in it. Rebuilding a speed from cached
+  walk/run values and multipliers was tried instead and broke crouching
+  repeatedly; there is no `fBaseSpeed` setting any more.
 - `bhkCharacterListener::collisionTolerance` — the field could not be located,
   so the plugin no longer zeroes it. The related ground-collision code patches
   (`bBunnyhopGroundCollision`) are still applied.
