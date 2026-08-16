@@ -24,6 +24,39 @@ without uninstalling it. The `b*` patches at the bottom of the file affect the
 engine globally rather than just the player, so they can be disabled
 individually if another mod conflicts.
 
+An **MCM Extender** menu ships in `MCM/`, writing the same ini. The plugin
+re-reads the file about once a second, so changes apply without a restart —
+except the three code patches at the bottom, which are applied once at load.
+`MCM-RU/` is optional Russian menu text.
+
+## Script interface
+
+Seven zero-argument commands, registered from opcode base `0x6A00`, for mods that
+need to know what the movement code knows or to tell it to stand down.
+
+| command | meaning |
+| --- | --- |
+| `PPScriptLayerReady` | the loose script is installed |
+| `PPBeginInteraction` / `PPEndInteraction` | a mod is steering the player |
+| `PPBlockedTime` | seconds spent walking into something and getting nowhere |
+| `PPSpeedRatio` | distance covered over distance asked for, 0 to 1 |
+| `PPInAir` | the character controller has left the ground |
+| `PPAirTime` | seconds since it left |
+
+`PPSpeedRatio`, `PPInAir` and `PPAirTime` exist because they can only be
+answered honestly from inside the movement solve, which sees both the speed the
+engine asked for and the distance actually covered. [Mantle](https://github.com/victorkozhokin/fnv-mantle)
+is built on them.
+
+Removing or renaming any of these breaks consuming scripts outright: they are
+compiled at runtime by name, and an unknown command fails the whole file rather
+than one line of it.
+
+`nvse/Plugins/Scripts/ln_PlayerPhysics.txt` is optional. It tells the plugin
+when an interaction mod is steering the player, so it stands down for exactly
+that. Delete it and the plugin goes back to standing down for every special idle
+in the load order.
+
 ## Building
 
 The plugin links without a C runtime and without the Windows SDK. A handful of kernel32
