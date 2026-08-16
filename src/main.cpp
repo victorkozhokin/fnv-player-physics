@@ -163,6 +163,27 @@ extern "C" bool __cdecl ShouldUsePhysics(const bhkCharacterController *charCtrl)
 	if (player->sitSleepState != 0)
 		return false;
 
+	// Swimming. Nothing in this plugin was written for water.
+	//
+	// The movement model assumes a surface underfoot to push against and a
+	// gravity that only ever points one way: friction is applied against a
+	// ground normal, acceleration is capped by a dot product with the current
+	// velocity, and the whole thing runs at roughly double gravity. In water
+	// that combination means sinking, and swimming up against it barely works.
+	//
+	// Both signals are asked because they answer at different moments. The
+	// character controller enters its swimming state only once the water is
+	// deep enough to swim in, while the move flag is set by the game's own
+	// movement code and covers wading out of the shallows before the state
+	// changes. Standing down a little early is free; standing down late is a
+	// player on the bottom of a lake wondering what happened.
+	if (charCtrl->hkState == kState_Swimming)
+		return false;
+
+	if (const auto *mover = player->actorMover;
+	    mover != nullptr && (mover->pcMovementFlags & kMoveFlag_Swimming) != 0)
+		return false;
+
 	// Movement controls taken away by a script -- scripted sequences and
 	// animation mods do this while they play an idle on the player.
 	if ((player->pcControlFlags & PlayerCharacter::kControlFlag_Movement) != 0)
