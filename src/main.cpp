@@ -138,6 +138,7 @@ static bool IsPlayerController(const bhkCharacterController *charCtrl)
 // crashes and stuck poses with animation mods such as B42 Interact.
 static bool IsSpecialIdlePlaying();
 static bool IsInteractionActive();
+static bool IsSwimming(UInt32 hkState);
 
 extern "C" bool __cdecl ShouldUsePhysics(const bhkCharacterController *charCtrl)
 {
@@ -163,8 +164,24 @@ extern "C" bool __cdecl ShouldUsePhysics(const bhkCharacterController *charCtrl)
 	if (player->sitSleepState != 0)
 		return false;
 
-	// Water is handled by IsSwimming and the gravity hook rather than here. See
-	// the note there for why the whole plugin no longer stands down for it.
+	// Swimming. The whole plugin stands down, and it has to be the whole plugin.
+	//
+	// Nothing below the ownership test was written for water: friction works
+	// against a ground normal, acceleration is capped by a dot product with the
+	// current velocity, and the direction is assembled from forward and right
+	// with no vertical axis at all. With the doubled gravity that reads as
+	// sinking; with vanilla gravity and the model still running it reads as
+	// swimming freely sideways and being unable to ask for up or down.
+	//
+	// Skipping only the velocity update was tried and is worse than either.
+	// When this plugin owns the player it does not call the engine's movement
+	// at all, it replaces it -- so declining to write a velocity does not hand
+	// the job back, it leaves whatever velocity was already there untouched.
+	// The player entered the water with some momentum and simply kept it,
+	// forever. Standing down has to happen here, where the original still gets
+	// called, or not at all.
+	if (IsSwimming(charCtrl->hkState))
+		return false;
 
 	// Movement controls taken away by a script -- scripted sequences and
 	// animation mods do this while they play an idle on the player.
@@ -398,8 +415,13 @@ static void ApplyAcceleration(const CharacterMoveParams &move, AlignedVector4 *v
 static NiVector3 GetInputVector(const PlayerMover *mover, UInt32 moveFlags)
 {
 	if (mover != nullptr) {
-		const auto analog = NiVector3(mover->moveVector[0],
-		                              mover->moveVector[1],
+		// moveVector is stored strafe-first, which is the opposite order to the
+		// forward-first frame used here. Taken as written, a stick pushed
+		// forward walked right and a stick pushed right walked forward -- a
+		// clean ninety degree rotation with no mirroring, which is exactly what
+		// a swapped pair looks like from the player's side.
+		const auto analog = NiVector3(mover->moveVector[1],
+		                              mover->moveVector[0],
 		                              mover->moveVector[2]);
 
 		// A stick at rest jitters around zero rather than sitting on it.
@@ -486,25 +508,6 @@ static void UpdateVelocity(const CharacterMoveParams &move, AlignedVector4 *velo
 	// never needed a speed of its own, and why every attempt here to rebuild
 	// one from cached fields and multipliers broke crouching.
 	const auto baseSpeed = move.input.XYZ().Length();
-
-	// Water is handed back to the engine, velocity and all.
-	//
-	// Everything below is written for a body on a surface: friction against a
-	// ground normal, acceleration capped by a dot product with the current
-	// velocity, and a direction assembled from forward and right with nothing
-	// vertical in it. That last part is why swimming came out as it did once
-	// the gravity was fixed -- left, right, forward and back all worked, and
-	// there was no way to ask for up or down, so the player stayed at whatever
-	// depth they arrived at.
-	//
-	// Giving the model a vertical axis is not the small change it sounds like.
-	// The engine's own wanted vector already points where the player is
-	// swimming, but it is not in the same frame as the input this builds, and
-	// this struct has already produced two wrong guesses about which field
-	// means what. Vanilla swimming works; the plugin can simply not be in the
-	// way of it.
-	if (IsSwimming(state))
-		return;
 
 	if (!inAir) {
 		if (config::g_settings.clipVelocityToSlope)
@@ -983,16 +986,9 @@ static void __fastcall hook_UpdateCharacterState(bhkCharacterController *charCtr
 		// Only override while the plugin is actually driving the player;
 		// otherwise hand the engine its own value back.
 		//
-		// Swimming is the one case where the plugin keeps the player and gives
-		// the gravity back anyway. This plugin runs the player at roughly
-		// double gravity, which on the ground is the point and in water is
-		// simply sinking -- swimming up cannot outpace it. Standing the whole
-		// plugin down for water fixed that too, but by swapping the movement
-		// model at every shoreline, which is felt. Handing back only the number
-		// that was actually wrong leaves the boundary seamless.
-		const auto own = ShouldUsePhysics(charCtrl);
-
-		charCtrl->gravityMult = own && !IsSwimming(charCtrl->hkState)
+		// Water is included in that: ShouldUsePhysics says no while swimming,
+		// so the engine gets its own gravity back for free.
+		charCtrl->gravityMult = ShouldUsePhysics(charCtrl)
 			? config::g_settings.gravityMult
 			: g_player.vanillaGravityMult;
 	}
