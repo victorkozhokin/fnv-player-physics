@@ -195,11 +195,10 @@ extern "C" bool __cdecl ShouldUsePhysics(const bhkCharacterController *charCtrl)
 // Two signals, because they answer at different moments. The character
 // controller enters its swimming state only once the water is deep enough to
 // swim in; the move flag is set by the game's own movement code and catches
-// wading out of the shallows a little before that. Answering early is free
-// here -- all it costs is vanilla gravity while still knee-deep.
-static bool IsSwimming(const bhkCharacterController *charCtrl)
+// wading out of the shallows a little before that.
+static bool IsSwimming(UInt32 hkState)
 {
-	if (charCtrl != nullptr && charCtrl->hkState == kState_Swimming)
+	if (hkState == kState_Swimming)
 		return true;
 
 	const auto *player = PlayerCharacter::GetSingleton();
@@ -384,8 +383,30 @@ static void ApplyAcceleration(const CharacterMoveParams &move, AlignedVector4 *v
 		*velocity *= speedCap / newLength;
 }
 
-static NiVector3 GetInputVector(UInt32 moveFlags)
+// The direction the player is asking to travel, in the local forward/right
+// frame GetMoveVector expects.
+//
+// The digital flags are eight compass points and nothing between, which is all
+// a keyboard can express and much less than a stick can. The engine keeps the
+// real analog direction in PlayerMover::moveVector and sets the flags beside it
+// as a coarse summary -- and that summary is what this used to read, which is
+// why a controller could go forward and could go right but could not go
+// forward-right: the summary names one direction at a time.
+//
+// So the analog vector wins whenever there is one, and the flags remain the
+// answer for a keyboard, where moveVector stays at zero.
+static NiVector3 GetInputVector(const PlayerMover *mover, UInt32 moveFlags)
 {
+	if (mover != nullptr) {
+		const auto analog = NiVector3(mover->moveVector[0],
+		                              mover->moveVector[1],
+		                              mover->moveVector[2]);
+
+		// A stick at rest jitters around zero rather than sitting on it.
+		if (analog.LengthSqr() > 0.01f)
+			return analog;
+	}
+
 	auto result = NiVector3();
 
 	if (moveFlags & kMoveFlag_Forward)
@@ -466,6 +487,24 @@ static void UpdateVelocity(const CharacterMoveParams &move, AlignedVector4 *velo
 	// one from cached fields and multipliers broke crouching.
 	const auto baseSpeed = move.input.XYZ().Length();
 
+	// Water is handed back to the engine, velocity and all.
+	//
+	// Everything below is written for a body on a surface: friction against a
+	// ground normal, acceleration capped by a dot product with the current
+	// velocity, and a direction assembled from forward and right with nothing
+	// vertical in it. That last part is why swimming came out as it did once
+	// the gravity was fixed -- left, right, forward and back all worked, and
+	// there was no way to ask for up or down, so the player stayed at whatever
+	// depth they arrived at.
+	//
+	// Giving the model a vertical axis is not the small change it sounds like.
+	// The engine's own wanted vector already points where the player is
+	// swimming, but it is not in the same frame as the input this builds, and
+	// this struct has already produced two wrong guesses about which field
+	// means what. Vanilla swimming works; the plugin can simply not be in the
+	// way of it.
+	if (IsSwimming(state))
+		return;
 
 	if (!inAir) {
 		if (config::g_settings.clipVelocityToSlope)
@@ -477,7 +516,7 @@ static void UpdateVelocity(const CharacterMoveParams &move, AlignedVector4 *velo
 	if (mover == nullptr || (moveFlags & kMoveMask) == 0)
 		return;
 
-	const auto inputVector = GetInputVector(moveFlags);
+	const auto inputVector = GetInputVector(mover, moveFlags);
 
 	if (NiVector3 moveVector; GetMoveVector(move, inputVector, &moveVector))
 		ApplyAcceleration(move, velocity, moveVector, inAir, baseSpeed, deltaTime);
@@ -953,7 +992,7 @@ static void __fastcall hook_UpdateCharacterState(bhkCharacterController *charCtr
 		// that was actually wrong leaves the boundary seamless.
 		const auto own = ShouldUsePhysics(charCtrl);
 
-		charCtrl->gravityMult = own && !IsSwimming(charCtrl)
+		charCtrl->gravityMult = own && !IsSwimming(charCtrl->hkState)
 			? config::g_settings.gravityMult
 			: g_player.vanillaGravityMult;
 	}
