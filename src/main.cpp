@@ -163,26 +163,8 @@ extern "C" bool __cdecl ShouldUsePhysics(const bhkCharacterController *charCtrl)
 	if (player->sitSleepState != 0)
 		return false;
 
-	// Swimming. Nothing in this plugin was written for water.
-	//
-	// The movement model assumes a surface underfoot to push against and a
-	// gravity that only ever points one way: friction is applied against a
-	// ground normal, acceleration is capped by a dot product with the current
-	// velocity, and the whole thing runs at roughly double gravity. In water
-	// that combination means sinking, and swimming up against it barely works.
-	//
-	// Both signals are asked because they answer at different moments. The
-	// character controller enters its swimming state only once the water is
-	// deep enough to swim in, while the move flag is set by the game's own
-	// movement code and covers wading out of the shallows before the state
-	// changes. Standing down a little early is free; standing down late is a
-	// player on the bottom of a lake wondering what happened.
-	if (charCtrl->hkState == kState_Swimming)
-		return false;
-
-	if (const auto *mover = player->actorMover;
-	    mover != nullptr && (mover->pcMovementFlags & kMoveFlag_Swimming) != 0)
-		return false;
+	// Water is handled by IsSwimming and the gravity hook rather than here. See
+	// the note there for why the whole plugin no longer stands down for it.
 
 	// Movement controls taken away by a script -- scripted sequences and
 	// animation mods do this while they play an idle on the player.
@@ -206,6 +188,28 @@ extern "C" bool __cdecl ShouldUsePhysics(const bhkCharacterController *charCtrl)
 		return false;
 
 	return true;
+}
+
+// In water deep enough that the player is swimming rather than walking.
+//
+// Two signals, because they answer at different moments. The character
+// controller enters its swimming state only once the water is deep enough to
+// swim in; the move flag is set by the game's own movement code and catches
+// wading out of the shallows a little before that. Answering early is free
+// here -- all it costs is vanilla gravity while still knee-deep.
+static bool IsSwimming(const bhkCharacterController *charCtrl)
+{
+	if (charCtrl != nullptr && charCtrl->hkState == kState_Swimming)
+		return true;
+
+	const auto *player = PlayerCharacter::GetSingleton();
+
+	if (player == nullptr)
+		return false;
+
+	const auto *mover = player->actorMover;
+
+	return mover != nullptr && (mover->pcMovementFlags & kMoveFlag_Swimming) != 0;
 }
 
 static bool HasSpecialIdle(const AnimData *animData)
@@ -674,20 +678,32 @@ extern "C" void __cdecl hook_MoveCharacter(bhkCharacterController *charCtrl,
 			move, velocity);
 	};
 
-	if (!ShouldUsePhysics(charCtrl)) {
+	// Everything from here to the ownership test has to run whether or not this
+	// plugin is driving the player, and all of it used to sit below the test.
+	//
+	// That one misplacement was three bugs. The ini reload could never undo
+	// itself: bEnabled=0 makes ShouldUsePhysics false, the function returned
+	// before reaching the reload, and nothing was left running that could ever
+	// read bEnabled=1 again -- so the MCM switch worked once, in one direction,
+	// until the game was restarted. The interaction watchdog had the same shape
+	// and was worse: a raised interaction flag is *itself* what makes
+	// ShouldUsePhysics false, so the timeout meant to release a flag nobody
+	// lowered could not run for exactly as long as it was needed. And the
+	// blocked, airborne and speed-ratio figures, which are what Mantle reads,
+	// froze at whatever they last were while the physics were stood down.
+	//
+	// Observing and acting are separate jobs. This half observes.
+	const auto state     = charCtrl->hkState;
+	const auto deltaTime = charCtrl->deltaTime;
+
+	if (!IsPlayerController(charCtrl)) {
 		callOriginal();
 		return;
 	}
 
-	// Pick up MCM edits, and hand edits made with the game running, without a
-	// restart. Only reached for the player, about once a second, and it does no
-	// more than stat a file until an edit actually lands.
-	//
-	// The three code patches are not revisited: they are applied once at load
-	// and their ini keys still need a restart.
 	// The interaction flag lapses if whoever set it never comes back.
 	if (g_scriptInteraction) {
-		g_interactionSeconds += charCtrl->deltaTime;
+		g_interactionSeconds += deltaTime;
 
 		if (g_interactionSeconds > kInteractionWatchdogSeconds) {
 			g_scriptInteraction = false;
@@ -695,15 +711,18 @@ extern "C" void __cdecl hook_MoveCharacter(bhkCharacterController *charCtrl,
 		}
 	}
 
+	// Pick up MCM edits, and hand edits made with the game running, without a
+	// restart. About once a second, and it does no more than stat a file until
+	// an edit actually lands.
+	//
+	// The three code patches are not revisited: they are applied once at load
+	// and their ini keys still need a restart.
 	if (g_reloadCountdown-- == 0) {
 		g_reloadCountdown = 60;
 
 		if (config::ReloadIfChanged())
 			log::Print("Reloaded %s", paths::Ini());
 	}
-
-	const auto state     = charCtrl->hkState;
-	const auto deltaTime = charCtrl->deltaTime;
 
 	g_inAir = state != kState_OnGround;
 
@@ -749,6 +768,12 @@ extern "C" void __cdecl hook_MoveCharacter(bhkCharacterController *charCtrl,
 			log::Print("blocked %u/10 s  wanted %u moved %u (x100)",
 			           tenths, UInt32(wanted * 100.f), UInt32(moved * 100.f));
 		}
+	}
+
+	// And this half acts. Nothing above here writes to the player.
+	if (!ShouldUsePhysics(charCtrl)) {
+		callOriginal();
+		return;
 	}
 
 	const auto before = *velocity;
@@ -918,7 +943,17 @@ static void __fastcall hook_UpdateCharacterState(bhkCharacterController *charCtr
 
 		// Only override while the plugin is actually driving the player;
 		// otherwise hand the engine its own value back.
-		charCtrl->gravityMult = ShouldUsePhysics(charCtrl)
+		//
+		// Swimming is the one case where the plugin keeps the player and gives
+		// the gravity back anyway. This plugin runs the player at roughly
+		// double gravity, which on the ground is the point and in water is
+		// simply sinking -- swimming up cannot outpace it. Standing the whole
+		// plugin down for water fixed that too, but by swapping the movement
+		// model at every shoreline, which is felt. Handing back only the number
+		// that was actually wrong leaves the boundary seamless.
+		const auto own = ShouldUsePhysics(charCtrl);
+
+		charCtrl->gravityMult = own && !IsSwimming(charCtrl)
 			? config::g_settings.gravityMult
 			: g_player.vanillaGravityMult;
 	}
