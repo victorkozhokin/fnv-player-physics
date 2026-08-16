@@ -414,8 +414,16 @@ static void ApplyAcceleration(const CharacterMoveParams &move, AlignedVector4 *v
 // answer for a keyboard, where moveVector stays at zero.
 static NiVector3 GetInputVector(const PlayerMover *mover, UInt32 moveFlags)
 {
-	if (mover != nullptr) {
-		// moveVector is stored strafe-first, which is the opposite order to the
+	// Asked of the flag rather than of the vector, because the vector cannot be
+	// asked. It was assumed to sit at zero on a keyboard and it does not --
+	// whatever it holds there, read through the swap below it came out as a
+	// steady push to the right, so every key walked the player sideways.
+	//
+	// There is no test on the contents that would have caught that. The engine
+	// already records which device the movement came from, and that is a fact
+	// rather than an inference about a field.
+	if (mover != nullptr && (moveFlags & kMoveFlag_IsKeyboard) == 0) {
+		// moveVector is stored strafe-first, the opposite order to the
 		// forward-first frame used here. Taken as written, a stick pushed
 		// forward walked right and a stick pushed right walked forward -- a
 		// clean ninety degree rotation with no mirroring, which is exactly what
