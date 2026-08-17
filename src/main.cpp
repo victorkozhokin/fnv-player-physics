@@ -660,23 +660,22 @@ extern "C" bool __cdecl Cmd_PPEndInteraction_Execute(void*, void*, void*, void*,
 	return true;
 }
 
-// Opcode space for plugins runs from 0x2000 to 0x8000, and 0x2000 itself is the
-// "unassigned" base NVSE complains about. Ranges are handed out by the NVSE
-// team to keep plugins apart; this one is not from them, it is a sparse corner
-// picked to make a collision unlikely. Seven slots are claimed.
+// The first slice of **0x4297-0x42D6**, the 64 opcodes registered to STRadaT on
+// the geckwiki NVSE opcode table: this 0x4297-0x42A6, Adaptive Weapon Handling 0x42A7-0x42B6, Throwables
+// 0x42B7-0x42D6.
 //
-// A collision here fails loudly rather than quietly: the script is compiled at
-// runtime by name, so a displaced command shows up as a compile error in the
-// log instead of as the wrong function being called.
-// The first slice of 0x6A00-0x6A3F, the 64 opcodes these three mods share:
-// this 0x6A00-0x6A0F, Adaptive Weapon Handling 0x6A10-0x6A1F, Throwables
-// 0x6A20-0x6A3F. See projects/OPCODES.md.
+// The registered range is written there as 4297-42D7. The later rows of that
+// table are inconsistent about whether the end is inclusive -- CacheUI, 1111
+// NVSE and FalloutNVAccess all give a size one smaller than their span, while
+// the earlier rows do not -- so the last opcode is left unused. 0x4297 through
+// 0x42D6 is 64 either way, and cannot tread on whoever comes next.
 //
 // The count is not decoration: a static_assert beside the command table fails
-// the build if this plugin ever outgrows its slice. Opcodes are handed out
-// sequentially from the base with no bound, so without it a tenth command here
-// would quietly take AWHScriptLayerReady's number.
-inline constexpr UInt32 kOpcodeBase  = 0x6A00;
+// the build if this plugin outgrows its slice. Opcodes are handed out
+// sequentially from the base with no bound, so without it an extra command
+// would quietly take a neighbour's number -- no error, and a script calling one
+// mod reaching the other.
+inline constexpr UInt32 kOpcodeBase  = 0x4297;
 inline constexpr UInt32 kOpcodeCount = 16;
 
 // Not const: NVSE writes the assigned opcode into these during registration.
