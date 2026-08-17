@@ -668,7 +668,16 @@ extern "C" bool __cdecl Cmd_PPEndInteraction_Execute(void*, void*, void*, void*,
 // A collision here fails loudly rather than quietly: the script is compiled at
 // runtime by name, so a displaced command shows up as a compile error in the
 // log instead of as the wrong function being called.
-inline constexpr UInt32 kOpcodeBase = 0x6A00;
+// The first slice of 0x6A00-0x6A3F, the 64 opcodes these three mods share:
+// this 0x6A00-0x6A0F, Adaptive Weapon Handling 0x6A10-0x6A1F, Throwables
+// 0x6A20-0x6A3F. See projects/OPCODES.md.
+//
+// The count is not decoration: a static_assert beside the command table fails
+// the build if this plugin ever outgrows its slice. Opcodes are handed out
+// sequentially from the base with no bound, so without it a tenth command here
+// would quietly take AWHScriptLayerReady's number.
+inline constexpr UInt32 kOpcodeBase  = 0x6A00;
+inline constexpr UInt32 kOpcodeCount = 16;
 
 // Not const: NVSE writes the assigned opcode into these during registration.
 CommandInfo g_cmdBeginInteraction = {
@@ -712,6 +721,32 @@ CommandInfo g_cmdEndInteraction = {
 	"tells Player Physics the interaction animation has finished",
 	0, 0, nullptr, AsCodePtr(Cmd_PPEndInteraction_Execute), nullptr, nullptr, 0
 };
+
+// **The order of this array is the opcode order.** NVSE hands out kOpcodeBase,
+// then the next, and so on; nothing else decides. Reordering it renumbers every
+// command after the change, which costs nothing here -- every consumer compiles
+// these by name at runtime -- but would break an esp compiled against the old
+// numbers.
+CommandInfo *const g_commands[] = {
+	&g_cmdScriptLayerReady,
+	&g_cmdBeginInteraction,
+	&g_cmdEndInteraction,
+	&g_cmdBlockedTime,
+	&g_cmdInAir,
+	&g_cmdSpeedRatio,
+	&g_cmdAirTime,
+};
+
+// The slice is small on purpose, and this is what keeps it safe.
+//
+// Opcodes are handed out sequentially from the base with no bound, so a plugin
+// that outgrows its slice walks into the next one. NVSE does not notice: the
+// number goes to whichever plugin registered second, and a script calling one
+// mod reaches the other, with no error and no log line. Here that is a build
+// failure instead.
+static_assert(sizeof(g_commands) / sizeof(*g_commands) <= kOpcodeCount,
+              "more commands than this plugin's opcode slice -- read "
+              "projects/OPCODES.md before widening it, the neighbours are close");
 
 //----------------------------------------------------------------------------
 // Hooks
@@ -1182,14 +1217,18 @@ extern "C" __declspec(dllexport) bool NVSEPlugin_Load(NVSEInterface *nvse)
 	// missing command is a compile error rather than a quiet false.
 	nvse->SetOpcodeBase(kOpcodeBase);
 
-	if (nvse->RegisterCommand(&g_cmdScriptLayerReady) &&
-	    nvse->RegisterCommand(&g_cmdBeginInteraction) &&
-	    nvse->RegisterCommand(&g_cmdEndInteraction) &&
-	    nvse->RegisterCommand(&g_cmdBlockedTime) &&
-	    nvse->RegisterCommand(&g_cmdInAir) &&
-	    nvse->RegisterCommand(&g_cmdSpeedRatio) &&
-	    nvse->RegisterCommand(&g_cmdAirTime))
-		log::Print("Registered the script commands from opcode %x.", kOpcodeBase);
+	auto registered = true;
+	for (auto *command : g_commands) {
+		if (!nvse->RegisterCommand(command)) {
+			registered = false;
+			break;
+		}
+	}
+
+	if (registered)
+		log::Print("Registered %u script commands from opcode %x (slice of %u).",
+		           UInt32(sizeof(g_commands) / sizeof(*g_commands)),
+		           kOpcodeBase, kOpcodeCount);
 	else
 		log::Print("Could not register the script commands; falling back to the "
 		           "special idle test.");
