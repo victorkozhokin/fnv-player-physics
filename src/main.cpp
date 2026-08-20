@@ -97,6 +97,7 @@ constinit float g_airSeconds  = 0.f;
 
 constinit bool  g_scriptInteraction = false;
 constinit bool  g_scriptLayerSeen   = false;
+
 constinit float g_interactionSeconds = 0.f;
 
 // An interaction that never reports finishing would disable the physics for the
@@ -1185,7 +1186,12 @@ extern "C" __declspec(dllexport) bool NVSEPlugin_Query(const NVSEInterface *nvse
 {
 	info->infoVersion = PluginInfo::kInfoVersion;
 	info->name        = "Player Physics";
-	info->version     = 3;
+	// **Bump this whenever a script command is added or removed.** It is what
+	// Mantle's load script tests to tell the reworked plugin from the original,
+	// and it stayed at 3 across the commit that first exported PPInAir,
+	// PPSpeedRatio and PPAirTime -- so 3 says nothing about whether they exist.
+	// 4 is the first value that means "has the three commands Mantle reads".
+	info->version     = 4;
 
 	if (nvse->isEditor)
 		return false;

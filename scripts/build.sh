@@ -125,8 +125,11 @@ echo "  LNK PlayerPhysics.dll"
 # from an earlier layout would otherwise be picked up and shipped.
 stage_dll="$root/nvse/Plugins"
 stage_ini="$root/config/PlayerMovement"
-archive="$root/PlayerPhysics.zip"
-stage_inputs=("$root/scripts-game" "$root/PlayerPhysics.ini" "$root/presets" "$root/MCM" "$root/MCM-RU" "$root/LICENSE" "$root/README.md")
+main_archive="$root/PlayerPhysics.zip"
+ini_archive="$root/PlayerPhysics - Config.zip"
+ru_archive="$root/PlayerPhysics - Russian MCM.zip"
+stage_ru="$root/.stage-ru"
+stage_inputs=("$root/scripts-game" "$root/PlayerPhysics.ini" "$root/presets" "$root/MCM" "$root/MCM-RU" "$root/LICENSE")
 
 # Refuse to touch the staging tree unless every input is present: the wipe
 # below is destructive, and a missing source would otherwise leave nothing.
@@ -134,14 +137,15 @@ for required in "${stage_inputs[@]}"; do
     [[ -e "$required" ]] || { echo "error: missing $required" >&2; exit 1; }
 done
 
-rm -rf "$root/nvse" "$root/config" "$archive"
+rm -rf "$root/nvse" "$root/config"
 mkdir -p "$stage_dll" "$stage_ini/presets"
 
 cp "$out/PlayerPhysics.dll" "$stage_dll/"
 mkdir -p "$root/nvse/Plugins/Scripts"
 cp "$root"/scripts-game/*.txt "$root/nvse/Plugins/Scripts/"
-cp "$root/PlayerPhysics.ini" "$stage_ini/"
 cp "$root"/presets/*.ini "$stage_ini/presets/"
+cp "$root/PlayerPhysics.ini" "$stage_ini/"
+
 
 # JIP will not precompile a loose script with unix line endings, and it fails
 # silently -- the script layer simply never announces itself and the plugin
@@ -151,9 +155,33 @@ for f in "$root"/nvse/Plugins/Scripts/*.txt; do
     perl -pi -e 's/\r?\n/\r\n/' "$f"
 done
 
-# LICENSE and README travel with the binary: this is a GPL-3.0 fork, so the
-# licence text and the notice of what changed have to reach whoever gets it.
-(cd "$root" && make_zip "$archive" nvse config MCM MCM-RU LICENSE README.md)
+# LICENSE travels with the binary: this is a GPL-3.0 fork and the licence text
+# has to reach whoever gets it. The notice of what was changed and whose work it
+# is a fork of lives on the mod page instead of in the archive.
+# Three archives, each installable on its own and each ready to upload.
+#
+#   PlayerPhysics.zip
+#       what the game needs, and nothing else.
+#   PlayerPhysics - Config.zip
+#       the ini, at the path it belongs at. Separate so that updating the mod
+#       cannot overwrite settings the player has spent time on -- a mod manager
+#       installs it once and leaves it alone afterwards.
+#   PlayerPhysics - Russian MCM.zip
+#       the Russian menu text, staged as MCM\Translations so it drops straight
+#       in. Separate because it replaces a file the main archive installs, and
+#       that is a thing a mod manager should be told about rather than hide.
+#
+# Documentation is not in any of them. It lives in the repository.
+rm -rf "$stage_ru" "$main_archive" "$ini_archive" "$ru_archive"
+mkdir -p "$stage_ru/MCM/Translations"
+cp "$root/MCM-RU/Translations/PlayerPhysics.ini" "$stage_ru/MCM/Translations/"
+
+(cd "$root"     && make_zip "$main_archive" nvse MCM LICENSE)
+(cd "$root"     && make_zip "$ini_archive"  config)
+(cd "$stage_ru" && make_zip "$ru_archive"   MCM)
+
+rm -rf "$stage_ru"
+
 
 
 echo
@@ -164,4 +192,6 @@ echo "        $stage_ini/presets/"
 echo "        $root/nvse/Plugins/Scripts/ (script layer)"
 echo "        $root/MCM/ (menu)"
 echo "        $root/MCM-RU/ (optional Russian menu text)"
-echo "package $archive"
+echo "package $main_archive"
+echo "        $ini_archive"
+echo "        $ru_archive"

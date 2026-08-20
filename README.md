@@ -1,115 +1,39 @@
-# fnv-player-physics
+# Player Physics
 
-NVSE plugin replacing Fallout: New Vegas' player movement with Quake-style
-physics: ground friction, air strafing, additive bunny hops and an impact-based
-landing penalty.
+## [Nexus](https://www.nexusmods.com/newvegas/mods/99081)
 
-Requires **FalloutNV.exe 1.4.0.525** (Steam or GOG) and xNVSE. The plugin refuses
-to load on any other build, because every hook address is hardcoded.
+Quake-style movement for **Fallout: New Vegas**, in place of the engine's own: ground friction, air strafing, additive bunny hops and a landing penalty that scales with how hard you hit.
 
-## Installing
+A fork of **[AltimorTASDK's Player Physics](https://github.com/AltimorTASDK/fnv-player-physics)**, reworked as a freestanding plugin that builds without MSVC.
 
-`PlayerPhysics.dll` goes into `Fallout New Vegas/Data/NVSE/Plugins/`.
-`PlayerPhysics.ini` goes into `Fallout New Vegas/Data/Config/PlayerMovement/`,
-which the plugin creates on first run if it is missing.
+## Features
 
-`PlayerPhysics.log` is written next to the ini. Under Mod Organizer 2 the
-virtual file system redirects that write, so look in MO2's **Overwrite** folder
-rather than in the game directory.
+- Air control you can steer a jump with, and hops that chain instead of stopping you dead.
+- Landing costs you speed in proportion to the impact, not a flat penalty.
+- Three presets — **Responsive**, **Grounded**, **Heavy** — or set the nine values yourself.
+- Stands down on its own for swimming, VATS, furniture and any mod that is steering you.
+- Optional engine patches for jumping while aiming and for bunny-hop ground collision, each switchable.
+- Exports what it knows to other mods, which is what **[Mantle](https://www.nexusmods.com/newvegas/mods/99083)** is built on.
 
-## Configuring
+## Requirements
 
-`Data/Config/PlayerMovement/PlayerPhysics.ini` is documented inline. `bEnabled=0` makes the plugin a no-op
-without uninstalling it. The `b*` patches at the bottom of the file affect the
-engine globally rather than just the player, so they can be disabled
-individually if another mod conflicts.
+- **FalloutNV.exe 1.4.0.525** (Steam or GOG) — every hook address is hardcoded, and the plugin refuses to load on any other build rather than crash later.
+- **xNVSE**
 
-An **MCM Extender** menu ships in `MCM/`, writing the same ini. The plugin
-re-reads the file about once a second, so changes apply without a restart —
-except the three code patches at the bottom, which are applied once at load.
-`MCM-RU/` is optional Russian menu text.
+Optional: **MCM Extender** for the menu, **JIP LN NVSE** for the script layer that lets interaction mods say when they are steering you.
 
-## Script interface
+## Config
 
-Seven zero-argument commands, registered from opcode base `0x6A00`, for mods that
-need to know what the movement code knows or to tell it to stand down.
+The menu, or `Data\Config\PlayerMovement\PlayerPhysics.ini`, which is documented inline and re-read about once a second. `bEnabled=0` makes the plugin a no-op without uninstalling it.
 
-| command | meaning |
-| --- | --- |
-| `PPScriptLayerReady` | the loose script is installed |
-| `PPBeginInteraction` / `PPEndInteraction` | a mod is steering the player |
-| `PPBlockedTime` | seconds spent walking into something and getting nowhere |
-| `PPSpeedRatio` | distance covered over distance asked for, 0 to 1 |
-| `PPInAir` | the character controller has left the ground |
-| `PPAirTime` | seconds since it left |
+The three code patches at the bottom of the file are applied once at load, so those need a restart.
 
-`PPSpeedRatio`, `PPInAir` and `PPAirTime` exist because they can only be
-answered honestly from inside the movement solve, which sees both the speed the
-engine asked for and the distance actually covered. [Mantle](https://github.com/victorkozhokin/fnv-mantle)
-is built on them.
+## Build
 
-Removing or renaming any of these breaks consuming scripts outright: they are
-compiled at runtime by name, and an unknown command fails the whole file rather
-than one line of it.
-
-`nvse/Plugins/Scripts/ln_PlayerPhysics.txt` is optional. It tells the plugin
-when an interaction mod is steering the player, so it stands down for exactly
-that. Delete it and the plugin goes back to standing down for every special idle
-in the load order.
-
-## Building
-
-The plugin links without a C runtime and without the Windows SDK. A handful of kernel32
-functions are declared by hand in `src/util/win32.h` and the import library is
-generated from `scripts/kernel32.def` at build time. That is what lets it be
-built anywhere, with nothing but clang and LLVM's linker.
-
-```sh
-./scripts/build.sh     # any clang will do for compiling, Apple's included
+```bash
+./scripts/build.sh
 ```
 
-Install LLVM first — `winget install LLVM.LLVM` on Windows, `brew install lld`
-on macOS (which brings llvm, for `lld-link` and `llvm-dlltool`), the distro's
-clang and lld packages on Linux.
+No MSVC and no Windows SDK — only LLVM. `winget install LLVM.LLVM` on Windows, `brew install lld` on macOS, the distro's clang and lld on Linux.
 
-The result is `build/PlayerPhysics.dll`. On Windows the script runs under Git
-Bash; it is not a cross-compile there, but nothing about the build changes.
-Packaging uses `zip`, falling back to `7z` where there is no `zip` — which is
-the case under Git for Windows.
-
-`cl.exe` is **not** supported: the sources combine clang's MS inline asm with
-GNU builtins. `CMakeLists.txt` exists for editor integration and requires
-clang too.
-
-## Layout
-
-| path | contents |
-| --- | --- |
-| `src/game/` | game structures and addresses for 1.4.0.525, with `static_assert`ed offsets |
-| `src/util/patch.*` | byte patching that verifies the original bytes before writing |
-| `src/util/log.*` | freestanding logger |
-| `src/config.*` | ini parsing |
-| `src/main.cpp` | the physics and every hook |
-
-### Known workarounds
-
-`bSpecialIdleYieldMovement` disables the custom physics for the duration of
-*any* special idle, which is heavier than it should be -- plenty of animation
-mods use special idles for things that have nothing to do with moving the
-player. It is the current price of coexisting with interaction mods that steer
-the player themselves; a narrower condition has not been worked out yet.
-
-### Notes on the game version
-
-All offsets were recovered from the retail 1.4.0.525 executable. Two things the
-original source referred to could not be reproduced from public headers:
-
-- `PlayerMover::moveSpeed` — no such field exists; offset `0x88` of `PlayerMover`
-  holds an analog move *direction*. Base speed is the length of the engine's own
-  wanted-movement vector, `move.input`, which already has stance, encumbrance,
-  crippled legs and every speed mod in it. Rebuilding a speed from cached
-  walk/run values and multipliers was tried instead and broke crouching
-  repeatedly; there is no `fBaseSpeed` setting any more.
-- `bhkCharacterListener::collisionTolerance` — the field could not be located,
-  so the plugin no longer zeroes it. The related ground-collision code patches
-  (`bBunnyhopGroundCollision`) are still applied.
+enjoy ^_^
