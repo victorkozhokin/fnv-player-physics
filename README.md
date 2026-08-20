@@ -4,7 +4,7 @@
 
 Quake-style movement for **Fallout: New Vegas**, in place of the engine's own: ground friction, air strafing, additive bunny hops and a landing penalty that scales with how hard you hit.
 
-A fork of **[AltimorTASDK's Player Physics](https://github.com/AltimorTASDK/fnv-player-physics)**, reworked as a freestanding plugin that builds without MSVC.
+Built on **[AltimorTASDK's Player Physics](https://github.com/AltimorTASDK/fnv-player-physics)**, reworked as a freestanding plugin that builds without MSVC.
 
 ## Features
 
