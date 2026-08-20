@@ -2,3 +2,10 @@
 # have an opinion about these files. core.autocrlf is "input" on this machine,
 # which would quietly rewrite them on the way into a commit.
 scripts-game/** -text
+
+# The game's ini files ship with windows line endings, as almost every menu in
+# this ecosystem does. core.autocrlf is "input" here, which would rewrite them
+# on the way into a commit, so git is told to leave them exactly as they are.
+#
+# MCM json is deliberately not listed: every menu in the corpus ships it as LF.
+*.ini -text
