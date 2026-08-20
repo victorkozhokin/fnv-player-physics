@@ -1,11 +1,8 @@
-; Player Physics -- Data\NVSE\Plugins\Scripts\ln_PlayerPhysics.txt
+; Tells the plugin when another mod is moving the player, so the movement
+; solve stands down for exactly that and nothing else.
 ;
-; Tells the plugin when another mod is moving the player, so the movement solve
-; stands down for exactly that and nothing else. Requires JIP LN NVSE.
-;
-; Optional: delete this file and the plugin keeps working, minus these cases.
-; Begin/End are counted, not flagged; every Begin needs its End, and the plugin
-; releases anything still raised after 30 seconds.
+; Begin and End are counted, not flagged; every Begin needs its End, and the
+; plugin releases anything still raised after 30 seconds.
 
 PPScriptLayerReady
 
